@@ -178,6 +178,8 @@ def main(args: argparse.Namespace) -> None:
         num_workers=args.workers,
         pin_memory=True,
         drop_last=True,
+        persistent_workers=args.workers > 0,
+        prefetch_factor=4 if args.workers > 0 else None,
     )
     val_loader = DataLoader(
         val_ds,
@@ -185,10 +187,21 @@ def main(args: argparse.Namespace) -> None:
         shuffle=False,
         num_workers=args.workers,
         pin_memory=True,
+        persistent_workers=args.workers > 0,
+        prefetch_factor=4 if args.workers > 0 else None,
     )
 
     # --- model ---
     model = get_model(args.model, num_classes=1).to(device)
+
+    # torch.compile (PyTorch ≥ 2.0) fuses ops and generates optimised CUDA
+    # kernels — typically 15–30 % faster per epoch with no code changes needed.
+    if hasattr(torch, "compile"):
+        try:
+            model = torch.compile(model, mode="reduce-overhead")
+            print("[info] torch.compile enabled (reduce-overhead mode)")
+        except Exception as exc:
+            print(f"[info] torch.compile skipped: {exc}")
 
     # --- optimiser / scheduler / loss ---
     optimizer  = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -279,13 +292,13 @@ if __name__ == "__main__":
                         help="Random seed")
     parser.add_argument("--epochs",       type=int,   default=20,
                         help="Number of training epochs")
-    parser.add_argument("--batch_size",   type=int,   default=16,
+    parser.add_argument("--batch_size",   type=int,   default=32,
                         help="Batch size per GPU")
     parser.add_argument("--lr",           type=float, default=1e-4,
                         help="Initial learning rate")
     parser.add_argument("--weight_decay", type=float, default=1e-4,
                         help="AdamW weight decay")
-    parser.add_argument("--workers",      type=int,   default=4,
+    parser.add_argument("--workers",      type=int,   default=8,
                         help="DataLoader worker count")
     parser.add_argument("--resume",       action="store_true",
                         help="Resume from last checkpoint if available")

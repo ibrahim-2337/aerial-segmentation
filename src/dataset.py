@@ -13,6 +13,7 @@ Val city     : tyrol-w  (West Tyrol, held-out)
 """
 
 import os
+import threading
 from pathlib import Path
 from typing import List, Tuple, Optional
 
@@ -24,6 +25,25 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
 from .utils import generate_tiles
+
+# ---------------------------------------------------------------------------
+# Per-worker file-handle cache
+# ---------------------------------------------------------------------------
+# rasterio.open() is expensive (~1–5 ms each call).  With 200 K tiles per
+# epoch every __getitem__ would open and close two files — adding hours of
+# pure I/O overhead.  thread.local() gives each DataLoader worker its own
+# dict of open handles that persist across __getitem__ calls.
+
+_tls = threading.local()
+
+
+def _open_rasterio(path: str) -> rasterio.DatasetReader:
+    """Return a cached rasterio handle for *path*, one per worker thread."""
+    if not hasattr(_tls, "handles"):
+        _tls.handles = {}
+    if path not in _tls.handles:
+        _tls.handles[path] = rasterio.open(path)
+    return _tls.handles[path]
 
 # ---------------------------------------------------------------------------
 # City splits
@@ -169,17 +189,15 @@ class InriaDataset(Dataset):
         ts = self.tile_size
         window = rasterio.windows.Window(col, row, ts, ts)
 
-        # --- read image (C, H, W) → (H, W, C) for albumentations ---
-        with rasterio.open(img_path) as src:
-            image = src.read(window=window)         # (3, H, W)  uint8
+        # --- read image via cached handle (no open/close overhead) ---
+        image = _open_rasterio(img_path).read(window=window)   # (3, H, W) uint8
 
         # Pad if the window extends beyond the image boundary
         image = _pad_to_tile(image, ts)             # still (3, H, W)
         image = np.moveaxis(image, 0, -1)           # (H, W, 3)
 
-        # --- read mask (1, H, W) → (H, W) ---
-        with rasterio.open(mask_path) as src:
-            mask = src.read(1, window=window)       # (H, W)  uint8
+        # --- read mask via cached handle ---
+        mask = _open_rasterio(mask_path).read(1, window=window)  # (H, W) uint8
 
         mask = _pad_to_tile(mask[np.newaxis], ts)[0]  # (H, W)
         mask = (mask > 127).astype(np.float32)      # binary 0/1
