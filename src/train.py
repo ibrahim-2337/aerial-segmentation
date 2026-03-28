@@ -166,7 +166,7 @@ def main(args: argparse.Namespace) -> None:
     log_csv_path   = ckpt_dir / "metrics.csv"
 
     # --- data ---
-    data_root = str(Path(__file__).parent.parent / "data" / "inria")
+    data_root = args.data_root or str(Path(__file__).parent.parent / "data" / "inria")
     train_ds = InriaDataset(data_root, split="train", tile_size=256, overlap=0.5)
     val_ds   = InriaDataset(data_root, split="val",   tile_size=256, overlap=0.5)
     print(f"[info] train tiles={len(train_ds)}  val tiles={len(val_ds)}")
@@ -289,6 +289,8 @@ if __name__ == "__main__":
                         help="DataLoader worker count")
     parser.add_argument("--resume",       action="store_true",
                         help="Resume from last checkpoint if available")
+    parser.add_argument("--data_root",    type=str,   default=None,
+                        help="Path to data/inria directory (overrides default)")
 
     args = parser.parse_args()
     main(args)
