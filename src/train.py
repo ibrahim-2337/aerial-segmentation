@@ -28,7 +28,7 @@ from tqdm import tqdm
 # Checkpoint directory (local /content/ only — no Drive needed)
 # ---------------------------------------------------------------------------
 
-IN_COLAB = "google.colab" in sys.modules
+IN_COLAB = os.path.isdir("/content")
 CKPT_BASE = "/content/checkpoints" if IN_COLAB else str(Path(__file__).parent.parent / "checkpoints")
 
 # Add project root to path so `src.*` imports work when running as a script

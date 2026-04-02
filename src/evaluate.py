@@ -44,7 +44,7 @@ from src.utils   import compute_iou, compute_dice, load_checkpoint
 # Checkpoint directory (local /content/ only — no Drive needed)
 # ---------------------------------------------------------------------------
 
-IN_COLAB = "google.colab" in sys.modules
+IN_COLAB = os.path.isdir("/content")
 CKPT_BASE = "/content/checkpoints" if IN_COLAB else str(Path(PROJECT_ROOT) / "checkpoints")
 
 # ---------------------------------------------------------------------------
