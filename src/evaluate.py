@@ -41,14 +41,11 @@ from src.models  import get_model
 from src.utils   import compute_iou, compute_dice, load_checkpoint
 
 # ---------------------------------------------------------------------------
-# Colab / Drive path detection (mirrors train.py)
+# Checkpoint directory (local /content/ only — no Drive needed)
 # ---------------------------------------------------------------------------
 
 IN_COLAB = "google.colab" in sys.modules
-if IN_COLAB:
-    DRIVE_CKPT_BASE = "/content/drive/MyDrive/aerial-segmentation/checkpoints"
-else:
-    DRIVE_CKPT_BASE = str(Path(PROJECT_ROOT) / "checkpoints")
+CKPT_BASE = "/content/checkpoints" if IN_COLAB else str(Path(PROJECT_ROOT) / "checkpoints")
 
 # ---------------------------------------------------------------------------
 # Per-model evaluation
@@ -66,7 +63,7 @@ def evaluate_checkpoint(
     device: torch.device,
 ) -> dict:
     """Load best checkpoint for *model_name* / *seed* and compute val metrics."""
-    ckpt_path = Path(DRIVE_CKPT_BASE) / f"{model_name}_seed{seed}" / "best.pth"
+    ckpt_path = Path(CKPT_BASE) / f"{model_name}_seed{seed}" / "best.pth"
     if not ckpt_path.exists():
         print(f"[WARN] checkpoint not found: {ckpt_path}")
         return {"model": model_name, "seed": seed, "iou": float("nan"), "dice": float("nan")}
@@ -144,7 +141,7 @@ def visualize_predictions(
     out_dir: str = "experiments/figures",
 ) -> None:
     """Save side-by-side (input | ground truth | prediction) figures."""
-    ckpt_path = Path(DRIVE_CKPT_BASE) / f"{model_name}_seed{seed}" / "best.pth"
+    ckpt_path = Path(CKPT_BASE) / f"{model_name}_seed{seed}" / "best.pth"
     if not ckpt_path.exists():
         print(f"[WARN] checkpoint not found for {model_name}/seed{seed}, skipping viz.")
         return
@@ -207,7 +204,9 @@ def visualize_predictions(
 
 def main(args: argparse.Namespace) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_root = str(Path(PROJECT_ROOT) / "data" / "inria")
+    data_root = args.data_root or (
+        "/content/inria" if IN_COLAB else str(Path(PROJECT_ROOT) / "data" / "inria")
+    )
 
     if args.mode in ("metrics", "all"):
         val_ds     = InriaDataset(data_root, split="val", tile_size=256, overlap=0.5)
@@ -240,10 +239,12 @@ def main(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate segmentation models")
-    parser.add_argument("--mode",  default="all", choices=["metrics", "visualize", "all"])
-    parser.add_argument("--model", default="unet", choices=["unet", "deeplabv3plus", "segformer"],
+    parser.add_argument("--mode",      default="all", choices=["metrics", "visualize", "all"])
+    parser.add_argument("--model",     default="unet", choices=["unet", "deeplabv3plus", "segformer"],
                         help="Model to visualise (only used when mode=visualize)")
-    parser.add_argument("--seed",  type=int, default=42,
+    parser.add_argument("--seed",      type=int, default=42,
                         help="Seed to use for visualisation checkpoint")
+    parser.add_argument("--data_root", type=str, default=None,
+                        help="Path to data/inria directory (overrides default)")
     args = parser.parse_args()
     main(args)
