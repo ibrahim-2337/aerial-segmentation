@@ -242,30 +242,31 @@ def main(args: argparse.Namespace) -> None:
 
     print(f"[info] Found checkpoints: {[f'{m}/seed{s}' for m, s in available]}")
 
+    # val = vienna (checkpoint selection); test = tyrol-w (final score, touch once)
+    split = "test" if args.test else "val"
+    split_label = "Test (tyrol-w)" if args.test else "Val (vienna)"
+
     if args.mode in ("metrics", "all"):
-        # overlap=0.0 matches training settings and keeps val set ~4x smaller
-        val_ds     = InriaDataset(data_root, split="val", tile_size=256, overlap=0.0)
-        val_loader = DataLoader(
-            val_ds, batch_size=32, shuffle=False, num_workers=4, pin_memory=True
-        )
+        ds     = InriaDataset(data_root, split=split, tile_size=256, overlap=0.0)
+        loader = DataLoader(ds, batch_size=32, shuffle=False, num_workers=4, pin_memory=True)
         results = []
         for model_name, seed in available:
-            res = evaluate_checkpoint(model_name, seed, val_loader, device)
+            res = evaluate_checkpoint(model_name, seed, loader, device)
             results.append(res)
             print(f"  {model_name}/seed{seed} → IoU={res['iou']:.4f}  Dice={res['dice']:.4f}")
 
         table = build_results_table(results)
-        print("\n=== Comparison Table ===")
+        print(f"\n=== Comparison Table — {split_label} ===")
         print(table.to_string(index=False))
 
     if args.mode in ("visualize", "all"):
-        val_ds = InriaDataset(data_root, split="val", tile_size=256, overlap=0.0)
+        ds = InriaDataset(data_root, split=split, tile_size=256, overlap=0.0)
         viz_models = [(m, s) for m, s in available if s == args.seed] or available[:1]
         for model_name, seed in viz_models:
             visualize_predictions(
                 model_name=model_name,
                 seed=seed,
-                val_dataset=val_ds,
+                val_dataset=ds,
                 device=device,
                 n_samples=5,
                 out_dir=str(Path(PROJECT_ROOT) / "experiments" / "figures"),
@@ -281,5 +282,8 @@ if __name__ == "__main__":
                         help="Seed to use for visualisation checkpoint")
     parser.add_argument("--data_root", type=str, default=None,
                         help="Path to data/inria directory (overrides default)")
+    parser.add_argument("--test", action="store_true",
+                        help="Evaluate on test split (tyrol-w) instead of val (vienna). "
+                             "Only run this once training is complete.")
     args = parser.parse_args()
     main(args)

@@ -49,8 +49,9 @@ def _open_rasterio(path: str) -> rasterio.DatasetReader:
 # City splits
 # ---------------------------------------------------------------------------
 
-TRAIN_CITIES: List[str] = ["austin", "chicago", "kitsap", "vienna"]
-VAL_CITIES:   List[str] = ["tyrol-w"]
+TRAIN_CITIES: List[str] = ["austin", "chicago", "kitsap"]
+VAL_CITIES:   List[str] = ["vienna"]
+TEST_CITIES:  List[str] = ["tyrol-w"]
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +178,12 @@ class InriaDataset(Dataset):
         self.split = split
         self.transform = transform if transform is not None else get_augmentation(split)
 
-        cities = TRAIN_CITIES if split == "train" else VAL_CITIES
+        if split == "train":
+            cities = TRAIN_CITIES
+        elif split == "val":
+            cities = VAL_CITIES
+        else:
+            cities = TEST_CITIES
         self.tiles: List[TileRecord] = build_tile_index(
             data_root, cities, tile_size=tile_size, overlap=overlap, max_tiles=max_tiles
         )
