@@ -152,8 +152,22 @@ def visualize_predictions(
 
     os.makedirs(out_dir, exist_ok=True)
 
-    indices = np.linspace(0, len(val_dataset) - 1, n_samples, dtype=int)
-    subset  = Subset(val_dataset, indices.tolist())
+    # Pick tiles that actually contain buildings in the ground truth
+    building_indices = []
+    for idx in range(len(val_dataset)):
+        _, mask_t = val_dataset[idx]
+        if mask_t.sum() > 50:          # at least 50 building pixels
+            building_indices.append(idx)
+        if len(building_indices) >= n_samples * 10:
+            break                       # stop scanning early once we have enough candidates
+
+    if len(building_indices) < n_samples:
+        # fallback: evenly spaced
+        building_indices = list(np.linspace(0, len(val_dataset) - 1, n_samples, dtype=int))
+
+    np.random.seed(0)
+    chosen = np.random.choice(building_indices, size=n_samples, replace=False).tolist()
+    subset = Subset(val_dataset, chosen)
 
     fig, axes = plt.subplots(n_samples, 3, figsize=(12, 4 * n_samples))
     col_titles = ["Input Image", "Ground Truth", "Prediction"]
