@@ -48,11 +48,28 @@ IN_COLAB = os.path.isdir("/content")
 CKPT_BASE = "/content/checkpoints" if IN_COLAB else str(Path(PROJECT_ROOT) / "checkpoints")
 
 # ---------------------------------------------------------------------------
-# Per-model evaluation
+# Checkpoint discovery
 # ---------------------------------------------------------------------------
 
-MODELS = ["unet", "deeplabv3plus", "segformer"]
-SEEDS  = [42, 0]
+def find_available_checkpoints() -> list:
+    """Return (model_name, seed) pairs that have a best.pth in CKPT_BASE."""
+    base = Path(CKPT_BASE)
+    available = []
+    if not base.exists():
+        return available
+    for d in sorted(base.iterdir()):
+        if d.is_dir() and (d / "best.pth").exists() and "_seed" in d.name:
+            model_name, seed_str = d.name.rsplit("_seed", 1)
+            try:
+                available.append((model_name, int(seed_str)))
+            except ValueError:
+                pass
+    return available
+
+
+# ---------------------------------------------------------------------------
+# Per-model evaluation
+# ---------------------------------------------------------------------------
 
 
 @torch.no_grad()
@@ -95,23 +112,19 @@ def evaluate_checkpoint(
 
 def build_results_table(results: list[dict]) -> pd.DataFrame:
     """Aggregate per-seed results into mean ± std per model."""
-    df = pd.DataFrame(results)
-    # Save raw per-seed results
+    df = pd.DataFrame(results).dropna(subset=["iou", "dice"])
     raw_path = Path(PROJECT_ROOT) / "experiments" / "results.csv"
     raw_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(raw_path, index=False)
     print(f"[info] per-seed results saved to {raw_path}")
 
-    # Aggregate
-    agg = (
-        df.groupby("model")[["iou", "dice"]]
-        .agg(["mean", "std"])
-        .round(4)
-    )
+    agg = df.groupby("model")[["iou", "dice"]].agg(["mean", "std"]).round(4)
     agg.columns = ["iou_mean", "iou_std", "dice_mean", "dice_std"]
     agg = agg.reset_index()
-    agg["IoU"]  = agg.apply(lambda r: f"{r.iou_mean:.4f} ± {r.iou_std:.4f}", axis=1)
-    agg["Dice"] = agg.apply(lambda r: f"{r.dice_mean:.4f} ± {r.dice_std:.4f}", axis=1)
+    agg["IoU"]  = agg.apply(
+        lambda r: f"{r.iou_mean:.4f}" + (f" ± {r.iou_std:.4f}" if not pd.isna(r.iou_std) else ""), axis=1)
+    agg["Dice"] = agg.apply(
+        lambda r: f"{r.dice_mean:.4f}" + (f" ± {r.dice_std:.4f}" if not pd.isna(r.dice_std) else ""), axis=1)
     return agg[["model", "IoU", "Dice"]]
 
 
@@ -222,28 +235,36 @@ def main(args: argparse.Namespace) -> None:
         "/content/inria" if IN_COLAB else str(Path(PROJECT_ROOT) / "data" / "inria")
     )
 
+    available = find_available_checkpoints()
+    if not available:
+        print(f"[ERROR] No checkpoints found in {CKPT_BASE}. Run training first.")
+        return
+
+    print(f"[info] Found checkpoints: {[f'{m}/seed{s}' for m, s in available]}")
+
     if args.mode in ("metrics", "all"):
-        val_ds     = InriaDataset(data_root, split="val", tile_size=256, overlap=0.5)
+        # overlap=0.0 matches training settings and keeps val set ~4x smaller
+        val_ds     = InriaDataset(data_root, split="val", tile_size=256, overlap=0.0)
         val_loader = DataLoader(
-            val_ds, batch_size=16, shuffle=False, num_workers=4, pin_memory=True
+            val_ds, batch_size=32, shuffle=False, num_workers=4, pin_memory=True
         )
         results = []
-        for model_name in MODELS:
-            for seed in SEEDS:
-                res = evaluate_checkpoint(model_name, seed, val_loader, device)
-                results.append(res)
-                print(f"  {model_name}/seed{seed} → IoU={res['iou']:.4f}  Dice={res['dice']:.4f}")
+        for model_name, seed in available:
+            res = evaluate_checkpoint(model_name, seed, val_loader, device)
+            results.append(res)
+            print(f"  {model_name}/seed{seed} → IoU={res['iou']:.4f}  Dice={res['dice']:.4f}")
 
         table = build_results_table(results)
         print("\n=== Comparison Table ===")
         print(table.to_string(index=False))
 
     if args.mode in ("visualize", "all"):
-        val_ds = InriaDataset(data_root, split="val", tile_size=256, overlap=0.5)
-        for model_name in MODELS:
+        val_ds = InriaDataset(data_root, split="val", tile_size=256, overlap=0.0)
+        viz_models = [(m, s) for m, s in available if s == args.seed] or available[:1]
+        for model_name, seed in viz_models:
             visualize_predictions(
                 model_name=model_name,
-                seed=args.seed,
+                seed=seed,
                 val_dataset=val_ds,
                 device=device,
                 n_samples=5,
