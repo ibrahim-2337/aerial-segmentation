@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
-import torch.cuda.amp as amp
+import torch.amp as amp
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
@@ -79,7 +79,7 @@ def evaluate_checkpoint(
         images = images.to(device, non_blocking=True)
         masks  = masks.to(device,  non_blocking=True)
 
-        with amp.autocast():
+        with amp.autocast("cuda"):
             logits = model(images)
 
         all_iou.append(compute_iou(logits, masks))
@@ -164,7 +164,7 @@ def visualize_predictions(
         image_t = image_t.unsqueeze(0).to(device)  # (1, 3, H, W)
         mask_t  = mask_t.unsqueeze(0).to(device)   # (1, 1, H, W)
 
-        with amp.autocast():
+        with amp.autocast("cuda"):
             logits = model(image_t)
 
         pred_mask = (torch.sigmoid(logits) > 0.5).squeeze().cpu().numpy()

@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 import torch
-import torch.cuda.amp as amp
+import torch.amp as amp
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
@@ -66,7 +66,7 @@ def train_one_epoch(
 
         optimizer.zero_grad(set_to_none=True)
 
-        with amp.autocast():
+        with amp.autocast("cuda"):
             logits = model(images)
             loss   = criterion(logits, masks)
 
@@ -108,7 +108,7 @@ def validate(
         images = images.to(device, non_blocking=True)
         masks  = masks.to(device,  non_blocking=True)
 
-        with amp.autocast():
+        with amp.autocast("cuda"):
             logits = model(images)
             loss   = criterion(logits, masks)
 
@@ -203,7 +203,7 @@ def main(args: argparse.Namespace) -> None:
     optimizer  = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler  = CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
     criterion  = BCEDiceLoss(bce_weight=0.5, dice_weight=0.5)
-    scaler     = amp.GradScaler()
+    scaler     = amp.GradScaler("cuda")
 
     # --- optional resume ---
     start_epoch = 1
