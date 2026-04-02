@@ -252,9 +252,11 @@ def main(args: argparse.Namespace) -> None:
         })
 
         # Save last checkpoint every epoch (enables resume after interruption)
+        # Unwrap torch.compile wrapper so state_dict has clean keys
+        raw_model = model._orig_mod if hasattr(model, "_orig_mod") else model
         last_state = {
             "epoch":                epoch,
-            "model_state_dict":     model.state_dict(),
+            "model_state_dict":     raw_model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "scheduler_state_dict": scheduler.state_dict(),
             "scaler_state_dict":    scaler.state_dict(),
