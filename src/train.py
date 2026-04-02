@@ -2,12 +2,12 @@
 Training script for aerial building segmentation.
 
 Usage (local or Colab terminal):
-    python src/train.py --model unet --seed 42 --epochs 20
-    python src/train.py --model deeplabv3plus --seed 0
-    python src/train.py --model segformer --seed 42 --resume
+    python src/train.py --model unet --seed 42
+    python src/train.py --model unet --seed 42 --epochs 5 --max_tiles 5000 --overlap 0.0
+    python src/train.py --model deeplabv3plus --seed 0 --resume
 
-Google Drive checkpoints are written after every epoch when running in Colab.
-Locally, checkpoints are written to ./checkpoints/.
+Checkpoints are written to /content/checkpoints/ in Colab, ./checkpoints/ locally.
+No Google Drive required.
 """
 
 import argparse
@@ -25,17 +25,11 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 # ---------------------------------------------------------------------------
-# Colab detection and Drive mounting
+# Checkpoint directory (local /content/ only — no Drive needed)
 # ---------------------------------------------------------------------------
 
 IN_COLAB = "google.colab" in sys.modules
-
-if IN_COLAB:
-    from google.colab import drive
-    drive.mount("/content/drive")
-    DRIVE_CKPT_BASE = "/content/drive/MyDrive/aerial-segmentation/checkpoints"
-else:
-    DRIVE_CKPT_BASE = str(Path(__file__).parent.parent / "checkpoints")
+CKPT_BASE = "/content/checkpoints" if IN_COLAB else str(Path(__file__).parent.parent / "checkpoints")
 
 # Add project root to path so `src.*` imports work when running as a script
 PROJECT_ROOT = str(Path(__file__).parent.parent)
@@ -158,8 +152,8 @@ def main(args: argparse.Namespace) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[info] device={device}  model={args.model}  seed={args.seed}")
 
-    # --- checkpoint directory (Drive when in Colab) ---
-    ckpt_dir = Path(DRIVE_CKPT_BASE) / f"{args.model}_seed{args.seed}"
+    # --- checkpoint directory ---
+    ckpt_dir = Path(CKPT_BASE) / f"{args.model}_seed{args.seed}"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     best_ckpt_path = ckpt_dir / "best.pth"
     last_ckpt_path = ckpt_dir / "last.pth"
@@ -167,8 +161,10 @@ def main(args: argparse.Namespace) -> None:
 
     # --- data ---
     data_root = args.data_root or str(Path(__file__).parent.parent / "data" / "inria")
-    train_ds = InriaDataset(data_root, split="train", tile_size=256, overlap=0.5)
-    val_ds   = InriaDataset(data_root, split="val",   tile_size=256, overlap=0.5)
+    train_ds = InriaDataset(data_root, split="train", tile_size=256, overlap=args.overlap,
+                            max_tiles=args.max_tiles)
+    val_ds   = InriaDataset(data_root, split="val",   tile_size=256, overlap=args.overlap,
+                            max_tiles=max(1000, args.max_tiles // 4) if args.max_tiles else 0)
     print(f"[info] train tiles={len(train_ds)}  val tiles={len(val_ds)}")
 
     train_loader = DataLoader(
@@ -290,7 +286,7 @@ if __name__ == "__main__":
                         help="Model architecture")
     parser.add_argument("--seed",         type=int,   default=42,
                         help="Random seed")
-    parser.add_argument("--epochs",       type=int,   default=20,
+    parser.add_argument("--epochs",       type=int,   default=5,
                         help="Number of training epochs")
     parser.add_argument("--batch_size",   type=int,   default=32,
                         help="Batch size per GPU")
@@ -300,6 +296,10 @@ if __name__ == "__main__":
                         help="AdamW weight decay")
     parser.add_argument("--workers",      type=int,   default=8,
                         help="DataLoader worker count")
+    parser.add_argument("--overlap",      type=float, default=0.0,
+                        help="Tile overlap fraction (0.0 = no overlap, faster; 0.5 = 50%% overlap)")
+    parser.add_argument("--max_tiles",    type=int,   default=5000,
+                        help="Max training tiles to sample (0 = use all). Caps dataset for fast runs.")
     parser.add_argument("--resume",       action="store_true",
                         help="Resume from last checkpoint if available")
     parser.add_argument("--data_root",    type=str,   default=None,

@@ -92,6 +92,7 @@ def build_tile_index(
     cities: List[str],
     tile_size: int = 256,
     overlap: float = 0.5,
+    max_tiles: int = 0,
 ) -> List[TileRecord]:
     """Scan *data_root*/train/{images,gt} for files belonging to *cities* and
     return the full list of (image_path, mask_path, row_start, col_start) tiles.
@@ -127,6 +128,11 @@ def build_tile_index(
         tiles = generate_tiles(h, w, tile_size=tile_size, overlap=overlap)
         for row, col in tiles:
             records.append((str(img_path), str(mask_path), row, col))
+
+    if max_tiles > 0 and len(records) > max_tiles:
+        import random as _rnd
+        _rnd.shuffle(records)
+        records = records[:max_tiles]
 
     return records
 
@@ -164,6 +170,7 @@ class InriaDataset(Dataset):
         tile_size: int = 256,
         overlap: float = 0.5,
         transform: Optional[A.Compose] = None,
+        max_tiles: int = 0,
     ):
         super().__init__()
         self.tile_size = tile_size
@@ -172,7 +179,7 @@ class InriaDataset(Dataset):
 
         cities = TRAIN_CITIES if split == "train" else VAL_CITIES
         self.tiles: List[TileRecord] = build_tile_index(
-            data_root, cities, tile_size=tile_size, overlap=overlap
+            data_root, cities, tile_size=tile_size, overlap=overlap, max_tiles=max_tiles
         )
 
         if len(self.tiles) == 0:
