@@ -269,6 +269,10 @@ def main(args: argparse.Namespace) -> None:
         "/content/inria" if IN_COLAB else str(Path(PROJECT_ROOT) / "data" / "inria")
     )
 
+    global CKPT_BASE
+    if args.ckpt_base:
+        CKPT_BASE = args.ckpt_base
+
     available = find_available_checkpoints()
     if not available:
         print(f"[ERROR] No checkpoints found in {CKPT_BASE}. Run training first.")
@@ -323,5 +327,7 @@ if __name__ == "__main__":
     parser.add_argument("--tta", action="store_true",
                         help="Enable 8-fold test-time augmentation (4 rotations × 2 flips). "
                              "Adds ~8× inference time but typically gains +1–2 IoU points.")
+    parser.add_argument("--ckpt_base",    type=str,   default=None,
+                        help="Checkpoint directory (overrides default)")
     args = parser.parse_args()
     main(args)

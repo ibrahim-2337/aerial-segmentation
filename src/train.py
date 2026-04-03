@@ -159,7 +159,8 @@ def main(args: argparse.Namespace) -> None:
     torch.backends.cudnn.allow_tf32       = True
 
     # --- checkpoint directory ---
-    ckpt_dir = Path(CKPT_BASE) / f"{args.model}_seed{args.seed}"
+    ckpt_base = args.ckpt_base or CKPT_BASE
+    ckpt_dir = Path(ckpt_base) / f"{args.model}_seed{args.seed}"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     best_ckpt_path = ckpt_dir / "best.pth"
     last_ckpt_path = ckpt_dir / "last.pth"
@@ -315,6 +316,8 @@ if __name__ == "__main__":
                         help="Resume from last checkpoint if available")
     parser.add_argument("--data_root",    type=str,   default=None,
                         help="Path to data/inria directory (overrides default)")
+    parser.add_argument("--ckpt_base",    type=str,   default=None,
+                        help="Checkpoint output directory (overrides default /content/checkpoints)")
 
     args = parser.parse_args()
     main(args)
