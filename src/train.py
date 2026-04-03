@@ -152,6 +152,12 @@ def main(args: argparse.Namespace) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[info] device={device}  model={args.model}  seed={args.seed}")
 
+    # TF32: ~3× faster matmuls on A100/H100 with negligible accuracy loss.
+    # No-op on older GPUs — safe to leave on unconditionally.
+    torch.set_float32_matmul_precision("high")
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32       = True
+
     # --- checkpoint directory ---
     ckpt_dir = Path(CKPT_BASE) / f"{args.model}_seed{args.seed}"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -163,8 +169,11 @@ def main(args: argparse.Namespace) -> None:
     data_root = args.data_root or str(Path(__file__).parent.parent / "data" / "inria")
     train_ds = InriaDataset(data_root, split="train", tile_size=256, overlap=args.overlap,
                             max_tiles=args.max_tiles)
-    val_ds   = InriaDataset(data_root, split="val",   tile_size=256, overlap=args.overlap,
-                            max_tiles=max(1000, args.max_tiles // 4) if args.max_tiles else 0)
+    # Cap val at 4000 tiles during training — enough for a reliable IoU estimate
+    # per epoch without spending time on the full 24k-tile val set.
+    # Full evaluation is done separately via evaluate.py.
+    val_ds   = InriaDataset(data_root, split="val",   tile_size=256, overlap=0.0,
+                            max_tiles=4000)
     print(f"[info] train tiles={len(train_ds)}  val tiles={len(val_ds)}")
 
     train_loader = DataLoader(
@@ -290,8 +299,8 @@ if __name__ == "__main__":
                         help="Random seed")
     parser.add_argument("--epochs",       type=int,   default=5,
                         help="Number of training epochs")
-    parser.add_argument("--batch_size",   type=int,   default=32,
-                        help="Batch size per GPU")
+    parser.add_argument("--batch_size",   type=int,   default=64,
+                        help="Batch size per GPU (64 fits A100 40GB; lower if OOM)")
     parser.add_argument("--lr",           type=float, default=1e-4,
                         help="Initial learning rate")
     parser.add_argument("--weight_decay", type=float, default=1e-4,
