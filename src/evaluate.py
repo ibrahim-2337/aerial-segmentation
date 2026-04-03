@@ -68,6 +68,28 @@ def find_available_checkpoints() -> list:
 
 
 # ---------------------------------------------------------------------------
+# Test-time augmentation
+# ---------------------------------------------------------------------------
+
+@torch.no_grad()
+def _tta_predict(model: torch.nn.Module, images: torch.Tensor) -> torch.Tensor:
+    """8-fold TTA: 4 rotations × 2 horizontal flips, return averaged logit-scale probs."""
+    preds = []
+    for k in range(4):
+        for flip in (False, True):
+            x = torch.rot90(images, k, dims=[2, 3])
+            if flip:
+                x = torch.flip(x, [3])
+            with amp.autocast("cuda"):
+                prob = torch.sigmoid(model(x))
+            if flip:
+                prob = torch.flip(prob, [3])
+            prob = torch.rot90(prob, -k, dims=[2, 3])
+            preds.append(prob)
+    return torch.stack(preds).mean(0)
+
+
+# ---------------------------------------------------------------------------
 # Per-model evaluation
 # ---------------------------------------------------------------------------
 
@@ -78,6 +100,7 @@ def evaluate_checkpoint(
     seed: int,
     val_loader: DataLoader,
     device: torch.device,
+    use_tta: bool = False,
 ) -> dict:
     """Load best checkpoint for *model_name* / *seed* and compute val metrics."""
     ckpt_path = Path(CKPT_BASE) / f"{model_name}_seed{seed}" / "best.pth"
@@ -96,8 +119,13 @@ def evaluate_checkpoint(
         images = images.to(device, non_blocking=True)
         masks  = masks.to(device,  non_blocking=True)
 
-        with amp.autocast("cuda"):
-            logits = model(images)
+        if use_tta:
+            probs  = _tta_predict(model, images)
+            # convert averaged probs back to pseudo-logits for metric helpers
+            logits = torch.logit(probs.clamp(1e-6, 1 - 1e-6))
+        else:
+            with amp.autocast("cuda"):
+                logits = model(images)
 
         all_iou.append(compute_iou(logits, masks))
         all_dice.append(compute_dice(logits, masks))
@@ -152,6 +180,7 @@ def visualize_predictions(
     device: torch.device,
     n_samples: int = 5,
     out_dir: str = "experiments/figures",
+    use_tta: bool = False,
 ) -> None:
     """Save side-by-side (input | ground truth | prediction) figures."""
     ckpt_path = Path(CKPT_BASE) / f"{model_name}_seed{seed}" / "best.pth"
@@ -191,8 +220,12 @@ def visualize_predictions(
         image_t = image_t.unsqueeze(0).to(device)  # (1, 3, H, W)
         mask_t  = mask_t.unsqueeze(0).to(device)   # (1, 1, H, W)
 
-        with amp.autocast("cuda"):
-            logits = model(image_t)
+        if use_tta:
+            probs  = _tta_predict(model, image_t)
+            logits = torch.logit(probs.clamp(1e-6, 1 - 1e-6))
+        else:
+            with amp.autocast("cuda"):
+                logits = model(image_t)
 
         pred_mask = (torch.sigmoid(logits) > 0.5).squeeze().cpu().numpy()
         gt_mask   = mask_t.squeeze().cpu().numpy()
@@ -214,8 +247,9 @@ def visualize_predictions(
             ax.set_xticks([])
             ax.set_yticks([])
 
+    tta_label = " (TTA)" if use_tta else ""
     fig.suptitle(
-        f"{model_name.upper()} – seed {seed} – West Tyrol validation",
+        f"{model_name.upper()} – seed {seed} – Vienna (val){tta_label}",
         fontsize=14, y=1.01,
     )
     fig.tight_layout()
@@ -251,7 +285,7 @@ def main(args: argparse.Namespace) -> None:
         loader = DataLoader(ds, batch_size=32, shuffle=False, num_workers=4, pin_memory=True)
         results = []
         for model_name, seed in available:
-            res = evaluate_checkpoint(model_name, seed, loader, device)
+            res = evaluate_checkpoint(model_name, seed, loader, device, use_tta=args.tta)
             results.append(res)
             print(f"  {model_name}/seed{seed} → IoU={res['iou']:.4f}  Dice={res['dice']:.4f}")
 
@@ -270,6 +304,7 @@ def main(args: argparse.Namespace) -> None:
                 device=device,
                 n_samples=5,
                 out_dir=str(Path(PROJECT_ROOT) / "experiments" / "figures"),
+                use_tta=args.tta,
             )
 
 
@@ -285,5 +320,8 @@ if __name__ == "__main__":
     parser.add_argument("--test", action="store_true",
                         help="Evaluate on test split (tyrol-w) instead of val (vienna). "
                              "Only run this once training is complete.")
+    parser.add_argument("--tta", action="store_true",
+                        help="Enable 8-fold test-time augmentation (4 rotations × 2 flips). "
+                             "Adds ~8× inference time but typically gains +1–2 IoU points.")
     args = parser.parse_args()
     main(args)
