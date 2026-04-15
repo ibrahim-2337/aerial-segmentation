@@ -4,15 +4,15 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 2.0+](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C.svg)](https://pytorch.org/)
 
-A comparative study of state-of-the-art semantic segmentation architectures for building extraction from high-resolution georeferenced aerial imagery. This project benchmarks **U-Net**, **DeepLabV3+**, and **SegFormer** on the [INRIA Aerial Image Labeling Dataset](https://project.inria.fr/aerialimagelabeling/).
+A comparative study of different model architectures for building extraction from high-resolution georeferenced aerial imagery. This project benchmarks **U-Net**, **DeepLabV3+**, and **SegFormer** on the [INRIA Aerial Image Labeling Dataset](https://project.inria.fr/aerialimagelabeling/).
 
 ---
 
 ## 🚀 Overview
 
-Extracting building footprints from aerial imagery is a critical task for urban planning, disaster response, and infrastructure monitoring. This repository provides a robust pipeline for:
+Extracting building footprints from aerial imagery is an important task for urban planning, disaster response, and infrastructure monitoring. This repository provides a robust pipeline for:
 - **Tiled Data Loading**: Handling large-scale GeoTIFFs (5000×5000 px) using sliding-window inference and rasterio.
-- **Architecture Benchmarking**: Directly comparing CNN-based (U-Net, DeepLabV3+) and Transformer-based (SegFormer) models.
+- **Architecture Benchmarking**: Directly comparing different models like U-Net, DeepLabV3+, and SegFormer.
 - **Production-Ready Training**: Integrated with mixed-precision training (AMP), learning rate scheduling, and automated checkpointing.
 
 ---
